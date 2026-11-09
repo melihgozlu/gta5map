@@ -6,7 +6,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="GTA Radar">
-    <title>GTA Radar (Routing)</title>
+    <title>GTA Radar (Smart Routing)</title>
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     
@@ -24,9 +24,9 @@
             z-index: 1000;
         }
         
-        /* Harita Zemini Filtresi (Çizgiyi etkilemez) */
+        /* Harita Zemini Filtresi (Siyah-Beyaz + İnvert + Matlaştırma) */
         .leaflet-tile-pane {
-            filter: grayscale(850%) invert(100%) sepia(10%) hue-rotate(180deg) brightness(85%) contrast(140%);
+            filter: grayscale(100%) invert(100%) sepia(10%) hue-rotate(180deg) brightness(85%) contrast(140%);
         }
         
         /* 3D Görünümlü Araç İkonu */
@@ -41,45 +41,63 @@
             transform-origin: 50% 50%;
         }
 
-        /* GTA Stili Arama Kutusu (HUD) */
-        .search-container {
+        /* Arama Kutusu ve Otomatik Tamamlama Menüsü (HUD) */
+        .search-wrapper {
             position: absolute;
             top: 20px;
             left: 50%;
             transform: translateX(-50%);
-            z-index: 1001; /* Haritanın en üstünde dursun */
-            width: 80%;
-            max-width: 400px;
+            z-index: 1001; 
+            width: 85%;
+            max-width: 450px;
         }
 
         #search-box {
             width: 100%;
-            padding: 12px 15px;
-            background: rgba(0, 0, 0, 0.75);
+            padding: 14px 18px;
+            background: rgba(0, 0, 0, 0.85);
             border: 2px solid #333;
             color: #fff;
             font-size: 16px;
             border-radius: 8px;
             outline: none;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.8);
-            backdrop-filter: blur(5px);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.9);
+            box-sizing: border-box;
             transition: border-color 0.3s;
         }
 
-        #search-box::placeholder {
-            color: #888;
+        #search-box:focus { border-color: #7b00b3; }
+        #search-box::placeholder { color: #888; }
+
+        /* Arama Sonuçları Listesi */
+        #suggestions {
+            background: rgba(15, 15, 15, 0.95);
+            border-radius: 8px;
+            margin-top: 8px;
+            max-height: 250px;
+            overflow-y: auto;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.9);
+            backdrop-filter: blur(5px);
+            display: none; /* Varsayılan olarak gizli */
         }
-        
-        /* Kutuya tıklanınca kenarı mor parlasın */
-        #search-box:focus {
-            border-color: #b300ff; 
+
+        .suggestion-item {
+            padding: 12px 18px;
+            color: #ddd;
+            border-bottom: 1px solid #333;
+            cursor: pointer;
+            font-size: 14px;
+            line-height: 1.4;
         }
+
+        .suggestion-item:last-child { border-bottom: none; }
+        .suggestion-item:hover { background: #222; color: #fff; }
     </style>
 </head>
 <body>
-    <!-- Arama Kutusu -->
-    <div class="search-container">
-        <input type="text" id="search-box" placeholder="Nereye gidiyoruz? (Örn: Kent Plaza Konya)">
+    <div class="search-wrapper">
+        <input type="text" id="search-box" placeholder="Hedef ara... (Örn: Kent Plaza)">
+        <div id="suggestions"></div>
     </div>
 
     <div id="map"></div>
@@ -88,16 +106,15 @@
     <script>
         let currentLat = 37.87;
         let currentLng = 32.48;
-        let routeLine = null; // Çizilen rotayı hafızada tutmak için
+        let routeLine = null; 
+        let searchTimeout = null;
 
         const map = L.map('map', {
             zoomControl: false,
             attributionControl: false 
         }).setView([currentLat, currentLng], 17);
 
-        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            maxZoom: 19
-        }).addTo(map);
+        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
 
         const carIcon = L.divIcon({
             html: '<div class="car-marker" id="car"></div>',
@@ -108,7 +125,7 @@
 
         const carMarker = L.marker([currentLat, currentLng], { icon: carIcon }).addTo(map);
 
-        // Anlık Konum Takibi
+        // GPS Takibi
         if (navigator.geolocation) {
             navigator.geolocation.watchPosition(
                 function(position) {
@@ -118,82 +135,97 @@
 
                     carMarker.setLatLng([currentLat, currentLng]);
                     
-                    // Eğer ekranda bir rota çizgisi yoksa, kamera arabayı takip etsin
-                    // (Rota varken harita uzaklaşacağı için kamerayı kilitlemiyoruz)
                     if (!routeLine) {
                         map.panTo([currentLat, currentLng], { animate: true });
                     }
 
                     if (heading !== null && !isNaN(heading)) {
                         const carDiv = document.getElementById('car');
-                        if (carDiv) {
-                            carDiv.style.transform = `rotate(${heading}deg)`;
-                        }
+                        if (carDiv) { carDiv.style.transform = `rotate(${heading}deg)`; }
                     }
                 },
-                function(error) {
-                    console.warn("GPS Bekleniyor...");
-                },
+                function(error) { console.warn("GPS Bekleniyor..."); },
                 { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 }
             );
         }
 
-        // --- ROTA ÇİZME MOTORU ---
-        document.getElementById('search-box').addEventListener('keypress', async function (e) {
-            if (e.key === 'Enter') { // Enter'a basıldığında
-                const address = this.value;
-                if (!address) return;
+        // --- AKILLI ARAMA VE ROTA MOTORU ---
+        const searchBox = document.getElementById('search-box');
+        const suggestionsBox = document.getElementById('suggestions');
 
-                // iPad'de klavyeyi ekrandan gizle
-                this.blur(); 
+        // Kullanıcı yazı yazdıkça (Yarım saniye gecikmeli arama yapar)
+        searchBox.addEventListener('input', function() {
+            clearTimeout(searchTimeout);
+            const query = this.value;
 
-                try {
-                    // 1. Adresi koordinata çevir (Ücretsiz)
-                    const geoRes = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}`);
-                    const geoData = await geoRes.json();
-                    
-                    if (geoData.length === 0) {
-                        alert("Adres bulunamadı! Daha net yazmayı dene.");
-                        return;
-                    }
-                    
-                    const destLat = geoData[0].lat;
-                    const destLng = geoData[0].lon;
-
-                    // 2. Rota koordinatlarını hesapla (Ücretsiz Araç Rotası API)
-                    const routeRes = await fetch(`https://router.project-osrm.org/route/v1/driving/${currentLng},currentLat;${destLng},destLat?overview=full&geometries=geojson`.replace('currentLat', currentLat).replace('destLat', destLat));
-                    const routeData = await routeRes.json();
-
-                    if (!routeData.routes || routeData.routes.length === 0) {
-                        alert("Bu adrese araç rotası çizilemiyor.");
-                        return;
-                    }
-
-                    const routeGeoJSON = routeData.routes[0].geometry;
-
-                    // Eski rota çizgisi varsa haritadan sil
-                    if (routeLine) {
-                        map.removeLayer(routeLine);
-                    }
-
-                    // 3. Çizgiyi Haritaya Ekle (GTA 5 Waypoint Moru)
-                    routeLine = L.geoJSON(routeGeoJSON, {
-                        style: {
-                            color: '#b300ff', // Parlak neon mor
-                            weight: 7,        // Çizgi kalınlığı
-                            opacity: 0.9      // Hafif şeffaflık
-                        }
-                    }).addTo(map);
-
-                    // Kamerayı, çizilen rotanın tamamını görecek şekilde yukarı kaldır (uzaklaştır)
-                    map.fitBounds(routeLine.getBounds(), { padding: [50, 50] });
-
-                } catch (err) {
-                    console.error(err);
-                    alert("Rota hesaplanırken internet hatası oluştu.");
-                }
+            if (query.length < 3) {
+                suggestionsBox.style.display = 'none';
+                return;
             }
+
+            searchTimeout = setTimeout(async () => {
+                try {
+                    // API'ye arama isteği at (Konya ağırlıklı sonuçlar için limit koyduk)
+                    const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=5&q=${encodeURIComponent(query)}`);
+                    const data = await res.json();
+
+                    suggestionsBox.innerHTML = ''; // Eski listeyi temizle
+
+                    if (data.length > 0) {
+                        suggestionsBox.style.display = 'block';
+                        data.forEach(item => {
+                            const div = document.createElement('div');
+                            div.className = 'suggestion-item';
+                            // Adresi parçalayıp daha okunaklı göster
+                            div.innerText = item.display_name; 
+                            
+                            // Seçeneğe tıklandığında rotayı çiz
+                            div.onclick = function() {
+                                searchBox.value = item.display_name.split(',')[0]; // Sadece ilk kısmı kutuya yaz
+                                suggestionsBox.style.display = 'none'; // Listeyi kapat
+                                searchBox.blur(); // Klavyeyi kapat
+                                drawRoute(item.lat, item.lon); // Rota fonksiyonunu çağır
+                            };
+                            suggestionsBox.appendChild(div);
+                        });
+                    } else {
+                        suggestionsBox.style.display = 'none';
+                    }
+                } catch (err) {
+                    console.error("Arama hatası", err);
+                }
+            }, 600); // 600ms bekleme süresi
         });
+
+        // Tıklanan hedefe rota çizen fonksiyon
+        async function drawRoute(destLat, destLng) {
+            try {
+                const routeRes = await fetch(`https://router.project-osrm.org/route/v1/driving/${currentLng},${currentLat};${destLng},${destLat}?overview=full&geometries=geojson`);
+                const routeData = await routeRes.json();
+
+                if (!routeData.routes || routeData.routes.length === 0) return;
+
+                const routeGeoJSON = routeData.routes[0].geometry;
+
+                if (routeLine) { map.removeLayer(routeLine); }
+
+                // GTA Waypoint Stili (Daha kalın, koyu mor, yuvarlak köşeler)
+                routeLine = L.geoJSON(routeGeoJSON, {
+                    style: {
+                        color: '#7b00b3', // Daha koyu mor
+                        weight: 10,       // Kalınlaştırıldı
+                        opacity: 0.9,
+                        lineCap: 'round', // Çizgi uçlarını yuvarlar
+                        lineJoin: 'round' // Çizgi dönüş köşelerini yuvarlar
+                    }
+                }).addTo(map);
+
+                map.fitBounds(routeLine.getBounds(), { padding: [60, 60] });
+
+            } catch (err) {
+                console.error("Rota çizimi hatası", err);
+            }
+        }
     </script>
 </body>
 </html>
