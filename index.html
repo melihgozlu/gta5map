@@ -6,15 +6,15 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="GTA Radar">
-    <title>GTA Radar (True Dark)</title>
+    <title>GTA Radar (Routing)</title>
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     
     <style>
-        html, body { height: 100%; width: 100%; margin: 0; padding: 0; background-color: #050505; overflow: hidden; }
+        html, body { height: 100%; width: 100%; margin: 0; padding: 0; background-color: #050505; overflow: hidden; font-family: sans-serif; }
         #map { height: 100%; width: 100%; }
 
-        /* Sinematik Kenar Karartması (Vignette) */
+        /* Sinematik Kenar Karartması */
         body::after {
             content: '';
             position: absolute;
@@ -24,15 +24,9 @@
             z-index: 1000;
         }
         
-        /* 
-           SİHİRLİ FİLTRE: 
-           1. grayscale(100%): Turuncu, yeşil ve mavi tonları tamamen yok eder (Siyah-beyaz yapar).
-           2. invert(100%): Beyazı siyaha çevirip gece modunu başlatır.
-           3. sepia & hue: Radara çok hafif koyu, mat bir "çelik/asfalt" hissiyatı katar.
-           4. brightness & contrast: Parlamaları kısıp tam oyun menüsü havası verir.
-        */
+        /* Harita Zemini Filtresi (Çizgiyi etkilemez) */
         .leaflet-tile-pane {
-            filter: grayscale(90%) invert(100%) sepia(10%) hue-rotate(180deg) brightness(85%) contrast(140%);
+            filter: grayscale(850%) invert(100%) sepia(10%) hue-rotate(180deg) brightness(85%) contrast(140%);
         }
         
         /* 3D Görünümlü Araç İkonu */
@@ -46,17 +40,60 @@
             transition: transform 0.15s linear;
             transform-origin: 50% 50%;
         }
+
+        /* GTA Stili Arama Kutusu (HUD) */
+        .search-container {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 1001; /* Haritanın en üstünde dursun */
+            width: 80%;
+            max-width: 400px;
+        }
+
+        #search-box {
+            width: 100%;
+            padding: 12px 15px;
+            background: rgba(0, 0, 0, 0.75);
+            border: 2px solid #333;
+            color: #fff;
+            font-size: 16px;
+            border-radius: 8px;
+            outline: none;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.8);
+            backdrop-filter: blur(5px);
+            transition: border-color 0.3s;
+        }
+
+        #search-box::placeholder {
+            color: #888;
+        }
+        
+        /* Kutuya tıklanınca kenarı mor parlasın */
+        #search-box:focus {
+            border-color: #b300ff; 
+        }
     </style>
 </head>
 <body>
+    <!-- Arama Kutusu -->
+    <div class="search-container">
+        <input type="text" id="search-box" placeholder="Nereye gidiyoruz? (Örn: Kent Plaza Konya)">
+    </div>
+
     <div id="map"></div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
+        let currentLat = 37.87;
+        let currentLng = 32.48;
+        let routeLine = null; // Çizilen rotayı hafızada tutmak için
+
         const map = L.map('map', {
             zoomControl: false,
             attributionControl: false 
-        }).setView([37.87, 32.48], 17);
+        }).setView([currentLat, currentLng], 17);
 
         L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
             maxZoom: 19
@@ -69,17 +106,23 @@
             iconAnchor: [14, 16]
         });
 
-        const carMarker = L.marker([37.87, 32.48], { icon: carIcon }).addTo(map);
+        const carMarker = L.marker([currentLat, currentLng], { icon: carIcon }).addTo(map);
 
+        // Anlık Konum Takibi
         if (navigator.geolocation) {
             navigator.geolocation.watchPosition(
                 function(position) {
-                    const lat = position.coords.latitude;
-                    const lng = position.coords.longitude;
+                    currentLat = position.coords.latitude;
+                    currentLng = position.coords.longitude;
                     const heading = position.coords.heading;
 
-                    carMarker.setLatLng([lat, lng]);
-                    map.panTo([lat, lng], { animate: true });
+                    carMarker.setLatLng([currentLat, currentLng]);
+                    
+                    // Eğer ekranda bir rota çizgisi yoksa, kamera arabayı takip etsin
+                    // (Rota varken harita uzaklaşacağı için kamerayı kilitlemiyoruz)
+                    if (!routeLine) {
+                        map.panTo([currentLat, currentLng], { animate: true });
+                    }
 
                     if (heading !== null && !isNaN(heading)) {
                         const carDiv = document.getElementById('car');
@@ -94,6 +137,63 @@
                 { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 }
             );
         }
+
+        // --- ROTA ÇİZME MOTORU ---
+        document.getElementById('search-box').addEventListener('keypress', async function (e) {
+            if (e.key === 'Enter') { // Enter'a basıldığında
+                const address = this.value;
+                if (!address) return;
+
+                // iPad'de klavyeyi ekrandan gizle
+                this.blur(); 
+
+                try {
+                    // 1. Adresi koordinata çevir (Ücretsiz)
+                    const geoRes = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}`);
+                    const geoData = await geoRes.json();
+                    
+                    if (geoData.length === 0) {
+                        alert("Adres bulunamadı! Daha net yazmayı dene.");
+                        return;
+                    }
+                    
+                    const destLat = geoData[0].lat;
+                    const destLng = geoData[0].lon;
+
+                    // 2. Rota koordinatlarını hesapla (Ücretsiz Araç Rotası API)
+                    const routeRes = await fetch(`https://router.project-osrm.org/route/v1/driving/${currentLng},currentLat;${destLng},destLat?overview=full&geometries=geojson`.replace('currentLat', currentLat).replace('destLat', destLat));
+                    const routeData = await routeRes.json();
+
+                    if (!routeData.routes || routeData.routes.length === 0) {
+                        alert("Bu adrese araç rotası çizilemiyor.");
+                        return;
+                    }
+
+                    const routeGeoJSON = routeData.routes[0].geometry;
+
+                    // Eski rota çizgisi varsa haritadan sil
+                    if (routeLine) {
+                        map.removeLayer(routeLine);
+                    }
+
+                    // 3. Çizgiyi Haritaya Ekle (GTA 5 Waypoint Moru)
+                    routeLine = L.geoJSON(routeGeoJSON, {
+                        style: {
+                            color: '#b300ff', // Parlak neon mor
+                            weight: 7,        // Çizgi kalınlığı
+                            opacity: 0.9      // Hafif şeffaflık
+                        }
+                    }).addTo(map);
+
+                    // Kamerayı, çizilen rotanın tamamını görecek şekilde yukarı kaldır (uzaklaştır)
+                    map.fitBounds(routeLine.getBounds(), { padding: [50, 50] });
+
+                } catch (err) {
+                    console.error(err);
+                    alert("Rota hesaplanırken internet hatası oluştu.");
+                }
+            }
+        });
     </script>
 </body>
 </html>
