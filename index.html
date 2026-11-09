@@ -6,7 +6,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="GTA Radar">
-    <title>GTA Radar (Live Navigation)</title>
+    <title>GTA Radar (Fixed)</title>
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     
@@ -24,14 +24,9 @@
             z-index: 1000;
         }
         
-        /* Harita Zemini Filtresi (Sınır çizgileri ve renk karmaşası yok edildi) */
+        /* Harita Zemini Filtresi */
         .leaflet-tile-pane {
-            filter: grayscale(100%) invert(100%) sepia(10%) hue-rotate(180deg) brightness(80%) contrast(150%);
-        }
-
-        /* Ülke/İlçe sınır çizgilerini ve etiketlerini tamamen gizle */
-        .leaflet-interactive {
-            stroke: none !important;
+            filter: grayscale(75%) invert(100%) sepia(10%) hue-rotate(180deg) brightness(80%) contrast(150%);
         }
         
         /* 3D Görünümlü Araç İkonu */
@@ -141,7 +136,7 @@
             clearTimeout(interactionTimer);
         });
 
-        // Anlık GPS Takibi ve Otomatik Rota Güncelleme (Yolu kaçırma kontrolü)
+        // Anlık GPS Takibi ve Otomatik Rota Güncelleme
         if (navigator.geolocation) {
             navigator.geolocation.watchPosition(
                 function(position) {
@@ -160,11 +155,11 @@
                         if (carDiv) { carDiv.style.transform = `rotate(${heading}deg)`; }
                     }
 
-                    // Eğer bir hedef seçilmişse, araç hareket ettikçe (ve her 5 saniyede bir) rotayı yeniden hesapla
+                    // Rota aktifse her 5 saniyede bir rotayı güncelle (yoldan sapma kontrolü)
                     const now = Date.now();
                     if (destLat && destLng && (now - lastRerouteTime > 5000)) {
                         lastRerouteTime = now;
-                        updateRoute();
+                        updateRoute(false);
                     }
                 },
                 function(error) { console.warn("GPS Bekleniyor..."); },
@@ -212,10 +207,9 @@
                                 searchBox.blur();
                                 userInteracting = false;
                                 
-                                // Hedef koordinatlarını kaydet ve rotayı çiz
                                 destLat = parseFloat(item.lat);
                                 destLng = parseFloat(item.lon);
-                                updateRoute(true); // İlk çizimde kamerayı sığdır
+                                updateRoute(true); // İlk çizimde haritayı rotaya odakla
                             };
                             suggestionsBox.appendChild(div);
                         });
@@ -233,7 +227,9 @@
             if (!destLat || !destLng) return;
 
             try {
-                const routeRes = await fetch(`https://router.project-osrm.org/route/v1/driving/${currentLng},${currentLat};${destLng},${destLat}?overview=full&geometries=geojson`);
+                // OSRM API İstirası (Doğru koordinat formatı)
+                const url = `https://router.project-osrm.org/route/v1/driving/${currentLng},${currentLat};${destLng},${destLat}?overview=full&geometries=geojson`;
+                const routeRes = await fetch(url);
                 const routeData = await routeRes.json();
 
                 if (!routeData.routes || routeData.routes.length === 0) return;
@@ -253,7 +249,6 @@
                     }
                 }).addTo(map);
 
-                // Sadece ilk arama yapıldığında haritayı rotaya odakla, sürüş esnasında kamerayı sarsma
                 if (fitBounds) {
                     map.fitBounds(routeLine.getBounds(), { padding: [60, 60] });
                 }
