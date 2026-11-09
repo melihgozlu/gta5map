@@ -6,7 +6,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="GTA Radar">
-    <title>GTA Radar (Hybrid Navigation)</title>
+    <title>GTA Radar (Consistent Grayscale)</title>
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     
@@ -24,7 +24,7 @@
             z-index: 1000;
         }
         
-        /* Harita Zemini Filtresi (Grayscale %75) */
+        /* Harita Zemini Filtresi (Her zoom seviyesinde sabit ve net Grayscale %75) */
         .leaflet-tile-pane {
             filter: grayscale(75%) invert(100%) sepia(10%) hue-rotate(180deg) brightness(85%) contrast(140%);
         }
@@ -32,9 +32,6 @@
         /* İdari ve deniz sınır çizgilerini gizle */
         .leaflet-overlay-pane path { stroke: none !important; }
         .leaflet-tile { border: none !important; outline: none !important; }
-
-        /* Zoom Seviyesine Göre Yazı Yoğunluğu Yönetimi */
-        .zoom-far .leaflet-tile-pane { filter: grayscale(75%) invert(100%) sepia(10%) hue-rotate(180deg) brightness(65%) contrast(160%) saturate(20%); }
         
         /* 3D Görünümlü Araç İkonu */
         .car-marker {
@@ -182,29 +179,16 @@
 
         const carMarker = L.marker([currentLat, currentLng], { icon: carIcon }).addTo(map);
 
-        // Zoom Seviyesi Kontrolü
-        function checkZoomLevel() {
-            const currentZoom = map.getZoom();
-            if (currentZoom < 15) {
-                document.body.classList.add('zoom-far');
-            } else {
-                document.body.classList.remove('zoom-far');
-            }
-        }
-        map.on('zoomend', checkZoomLevel);
-        checkZoomLevel();
-
         map.on('movestart', function() {
             userInteracting = true;
             clearTimeout(interactionTimer);
         });
 
-        // HİBRİT YÖN YÖNETİMİ (GPS Hareketi + Cihaz Pusulası Desteği)
+        // Hibrit Yön Yönetimi (GPS Hareketi + Cihaz Pusulası Desteği)
         window.addEventListener('deviceorientation', function(e) {
             let heading = e.alpha; 
             if (heading !== null && !isNaN(heading)) {
                 if (e.webkitCompassHeading) { heading = e.webkitCompassHeading; }
-                // Sadece GPS yönü aktif değilse veya araç duruyorsa pusulayı kullan
                 if (!window.gpsHeadingActive) {
                     updateHeading(heading);
                 }
@@ -234,7 +218,6 @@
                         map.panTo([currentLat, currentLng], { animate: true });
                     }
 
-                    // Eğer GPS gerçek bir yön veriyorsa (araç hareket halindeyken) önceliği GPS'e ver
                     if (gpsHeading !== null && !isNaN(gpsHeading) && gpsHeading >= 0) {
                         window.gpsHeadingActive = true;
                         updateHeading(gpsHeading);
@@ -308,7 +291,7 @@
             }, 500);
         });
 
-        // Kesin Sonuç Veren Rota Motoru (Garantili Mor Çizgi)
+        // Kesin Sonuç Veren Rota Motoru
         async function updateRoute(fitBounds = false) {
             if (destLat === null || destLng === null) return;
 
