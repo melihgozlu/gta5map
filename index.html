@@ -2,34 +2,44 @@
 <html>
 <head>
     <meta charset="utf-8">
-    <!-- iOS Araç Ekranı Ayarları -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="GTA Radar">
-    <title>GTA Radar (Free Dark)</title>
+    <title>GTA Radar (Vibe)</title>
     
-    <!-- Ücretsiz Harita Kütüphanesi -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     
     <style>
-        /* Haritayı tam ekran yap */
-        html, body, #map { height: 100%; width: 100%; margin: 0; padding: 0; background-color: #111; overflow: hidden; }
+        /* Kenar boşluklarını sıfırla ve arka planı siyah yap */
+        html, body { height: 100%; width: 100%; margin: 0; padding: 0; background-color: #050505; overflow: hidden; }
         
-        /* İŞTE SİHİRLİ KOD: Standart haritayı Gece Moduna çevirir */
-        .leaflet-tile-pane {
-            filter: invert(100%) hue-rotate(180deg) brightness(95%) contrast(105%);
+        #map { height: 100%; width: 100%; }
+
+        /* GTA 5 SİNERJİSİ: Ekranın köşelerini karartan Radar (Vignette) Efekti */
+        body::after {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            box-shadow: inset 0 0 120px rgba(0,0,0,1);
+            pointer-events: none; /* Haritaya tıklamayı engellemez */
+            z-index: 1000;
         }
         
-        /* Araba İkonu Tasarımı (Beyaz Ok) */
+        /* GTA 5 Renk Paleti: Kontrastlı, soluk mat ve koyu asfalta benzer tonlar */
+        .leaflet-tile-pane {
+            filter: invert(100%) hue-rotate(195deg) brightness(110%) contrast(130%) saturate(60%);
+        }
+        
+        /* 3D Görünümlü Araç İkonu (Daha geniş, belirgin gölgeli) */
         .car-marker {
             width: 0; 
             height: 0; 
-            border-left: 12px solid transparent;
-            border-right: 12px solid transparent;
-            border-bottom: 28px solid #ffffff;
-            filter: drop-shadow(0px 0px 4px #000000);
-            transition: transform 0.2s linear;
+            border-left: 14px solid transparent;
+            border-right: 14px solid transparent;
+            border-bottom: 32px solid #ffffff;
+            filter: drop-shadow(0px 4px 6px rgba(0,0,0,0.9));
+            transition: transform 0.15s linear;
             transform-origin: 50% 50%;
         }
     </style>
@@ -39,28 +49,28 @@
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
-        // Haritayı başlat
+        // attributionControl: false ile sağ alttaki Leaflet yazısı kaldırıldı
         const map = L.map('map', {
-            zoomControl: false 
-        }).setView([37.87, 32.48], 17); // Konya Merkez
+            zoomControl: false,
+            attributionControl: false 
+        }).setView([37.87, 32.48], 17);
 
-        // Tamamen ücretsiz, API gerektirmeyen standart OpenStreetMap (CSS ile karartıldı)
+        // Ücretsiz ve Limitsiz OpenStreetMap
         L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            maxZoom: 19,
-            attribution: ''
+            maxZoom: 19
         }).addTo(map);
 
-        // Araba İkonunu Ekle
+        // Araç İkonunu Haritaya Ekleme
         const carIcon = L.divIcon({
             html: '<div class="car-marker" id="car"></div>',
             className: '',
-            iconSize: [24, 28],
-            iconAnchor: [12, 14]
+            iconSize: [28, 32],
+            iconAnchor: [14, 16] // İkonun tam merkezini belirler
         });
 
         const carMarker = L.marker([37.87, 32.48], { icon: carIcon }).addTo(map);
 
-        // GPS Takibi (PC'de sabit durabilir, iPad'de hareket eder)
+        // Anlık GPS Okuma
         if (navigator.geolocation) {
             navigator.geolocation.watchPosition(
                 function(position) {
