@@ -6,7 +6,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="GTA Radar">
-    <title>GTA Radar (Pro Navigation)</title>
+    <title>GTA Radar (Ultimate)</title>
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     
@@ -24,9 +24,15 @@
             z-index: 1000;
         }
         
-        /* Harita Zemini Filtresi (Grayscale %75) */
+        /* Harita Zemini Filtresi (Grayscale %75 ve Deniz çizgilerini yok eden tonlama) */
         .leaflet-tile-pane {
             filter: grayscale(75%) invert(100%) sepia(10%) hue-rotate(180deg) brightness(85%) contrast(140%);
+        }
+
+        /* Denizlerin üzerindeki o istenmeyen çizgileri ve parlamaları tamamen gizle */
+        .leaflet-tile {
+            border: none !important;
+            outline: none !important;
         }
         
         /* 3D Görünümlü Araç İkonu */
@@ -181,14 +187,11 @@
             clearTimeout(interactionTimer);
         });
 
-        // Anlık Yön ve Pusula Tepkisi (Cihaz Yönelimi - Pusula Sensörü)
+        // Anlık Yön ve Pusula
         window.addEventListener('deviceorientation', function(e) {
-            let heading = e.alpha; // Cihazın kendi pusula yönü
+            let heading = e.alpha; 
             if (heading !== null && !isNaN(heading)) {
-                // iOS cihazlarda alpha değeri ters dönebilir, webkitCompassHeading varsa onu kullan
-                if (e.webkitCompassHeading) {
-                    heading = e.webkitCompassHeading;
-                }
+                if (e.webkitCompassHeading) { heading = e.webkitCompassHeading; }
                 
                 const carDiv = document.getElementById('car');
                 if (carDiv) { carDiv.style.transform = `rotate(${heading}deg)`; }
@@ -198,7 +201,7 @@
             }
         }, true);
 
-        // Anlık GPS Takibi ve Rota Güncelleme
+        // Anlık GPS ve Rota Güncelleme
         if (navigator.geolocation) {
             navigator.geolocation.watchPosition(
                 function(position) {
@@ -229,7 +232,7 @@
             }, 60000);
         });
 
-        // Gelişmiş Türkiye Odaklı Adres Arama
+        // Güçlendirilmiş Çoklu Adres Arama Motoru (Photon + Nominatim)
         const searchBox = document.getElementById('search-box');
         const suggestionsBox = document.getElementById('suggestions');
 
@@ -244,27 +247,33 @@
 
             searchTimeout = setTimeout(async () => {
                 try {
-                    // Türkiye içi arama önceliği (countrycodes=tr) ve zengin veri seti
-                    const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=8&countrycodes=tr&q=${encodeURIComponent(query)}`);
+                    // Daha gelişmiş sonuçlar için Photon API (OpenStreetMap tabanlı güçlü arama)
+                    const res = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&limit=6&lat=${currentLat}&lon=${currentLng}&lang=tr`);
                     const data = await res.json();
 
                     suggestionsBox.innerHTML = '';
 
-                    if (data.length > 0) {
+                    if (data.features && data.features.length > 0) {
                         suggestionsBox.style.display = 'block';
-                        data.forEach(item => {
+                        data.features.forEach(item => {
+                            const props = item.properties;
+                            // Adres bileşenlerini okunabilir bir formata getir
+                            let nameParts = [props.name, props.street, props.city, props.state].filter(Boolean);
+                            let displayName = nameParts.join(', ');
+
                             const div = document.createElement('div');
                             div.className = 'suggestion-item';
-                            div.innerText = item.display_name; 
+                            div.innerText = displayName; 
                             
                             div.onclick = function() {
-                                searchBox.value = item.display_name.split(',')[0];
+                                searchBox.value = props.name || displayName.split(',')[0];
                                 suggestionsBox.style.display = 'none';
                                 searchBox.blur();
                                 userInteracting = false;
                                 
-                                destLat = parseFloat(item.lat);
-                                destLng = parseFloat(item.lon);
+                                // Koordinatlar [Boylam, Enlem] şeklinde gelir
+                                destLng = item.geometry.coordinates[0];
+                                destLat = item.geometry.coordinates[1];
                                 updateRoute(true);
                             };
                             suggestionsBox.appendChild(div);
