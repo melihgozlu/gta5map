@@ -6,32 +6,36 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="GTA Radar">
-    <title>GTA Radar (Vibe)</title>
+    <title>GTA Radar (True Dark)</title>
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     
     <style>
-        /* Kenar boşluklarını sıfırla ve arka planı siyah yap */
         html, body { height: 100%; width: 100%; margin: 0; padding: 0; background-color: #050505; overflow: hidden; }
-        
         #map { height: 100%; width: 100%; }
 
-        /* GTA 5 SİNERJİSİ: Ekranın köşelerini karartan Radar (Vignette) Efekti */
+        /* Sinematik Kenar Karartması (Vignette) */
         body::after {
             content: '';
             position: absolute;
             top: 0; left: 0; right: 0; bottom: 0;
             box-shadow: inset 0 0 120px rgba(0,0,0,1);
-            pointer-events: none; /* Haritaya tıklamayı engellemez */
+            pointer-events: none; 
             z-index: 1000;
         }
         
-        /* GTA 5 Renk Paleti: Kontrastlı, soluk mat ve koyu asfalta benzer tonlar */
+        /* 
+           SİHİRLİ FİLTRE: 
+           1. grayscale(100%): Turuncu, yeşil ve mavi tonları tamamen yok eder (Siyah-beyaz yapar).
+           2. invert(100%): Beyazı siyaha çevirip gece modunu başlatır.
+           3. sepia & hue: Radara çok hafif koyu, mat bir "çelik/asfalt" hissiyatı katar.
+           4. brightness & contrast: Parlamaları kısıp tam oyun menüsü havası verir.
+        */
         .leaflet-tile-pane {
-            filter: invert(100%) hue-rotate(195deg) brightness(110%) contrast(130%) saturate(60%);
+            filter: grayscale(100%) invert(100%) sepia(10%) hue-rotate(180deg) brightness(85%) contrast(140%);
         }
         
-        /* 3D Görünümlü Araç İkonu (Daha geniş, belirgin gölgeli) */
+        /* 3D Görünümlü Araç İkonu */
         .car-marker {
             width: 0; 
             height: 0; 
@@ -49,28 +53,24 @@
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
-        // attributionControl: false ile sağ alttaki Leaflet yazısı kaldırıldı
         const map = L.map('map', {
             zoomControl: false,
             attributionControl: false 
         }).setView([37.87, 32.48], 17);
 
-        // Ücretsiz ve Limitsiz OpenStreetMap
         L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
             maxZoom: 19
         }).addTo(map);
 
-        // Araç İkonunu Haritaya Ekleme
         const carIcon = L.divIcon({
             html: '<div class="car-marker" id="car"></div>',
             className: '',
             iconSize: [28, 32],
-            iconAnchor: [14, 16] // İkonun tam merkezini belirler
+            iconAnchor: [14, 16]
         });
 
         const carMarker = L.marker([37.87, 32.48], { icon: carIcon }).addTo(map);
 
-        // Anlık GPS Okuma
         if (navigator.geolocation) {
             navigator.geolocation.watchPosition(
                 function(position) {
