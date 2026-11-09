@@ -6,7 +6,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="GTA Radar">
-    <title>GTA Radar (Route Fixed)</title>
+    <title>GTA Radar (Zoom Labels & Route Fixed)</title>
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     
@@ -37,6 +37,20 @@
         .leaflet-tile {
             border: none !important;
             outline: none !important;
+        }
+
+        /* --- ZOOM SEVİYESİNE GÖRE YAZI VE DETAY YÖNETİMİ --- */
+        /* Harita çok uzaklaştırıldığında (Genel bakış) yazıları gizle */
+        .zoom-far .leaflet-tile-pane { filter: grayscale(75%) invert(100%) sepia(10%) hue-rotate(180deg) brightness(65%) contrast(160%) saturate(20%); }
+        
+        /* Leaflet üzerindeki yer isimleri (etiketler) */
+        .leaflet-marker-pane, .leaflet-shadow-pane {
+            transition: opacity 0.3s ease;
+        }
+        
+        /* Uzaktayken isimleri tamamen şeffaflaştırıp yok et */
+        .map-labels-hidden .leaflet-overlay-pane {
+            opacity: 0.3;
         }
         
         /* 3D Görünümlü Araç İkonu */
@@ -186,6 +200,22 @@
 
         const carMarker = L.marker([currentLat, currentLng], { icon: carIcon }).addTo(map);
 
+        // --- ZOOM SEVİYESİNE GÖRE İSİM YOĞUNLUĞU KONTROLÜ ---
+        function checkZoomLevel() {
+            const currentZoom = map.getZoom();
+            const bodyElement = document.body;
+            
+            // Eğer harita çok uzaklaştırıldıysa (Zoom 15'ten küçükse) yazıları ve detayları azalt/gizle
+            if (currentZoom < 15) {
+                bodyElement.classList.add('zoom-far');
+            } else {
+                bodyElement.classList.remove('zoom-far');
+            }
+        }
+
+        map.on('zoomend', checkZoomLevel);
+        checkZoomLevel(); // İlk açılışta kontrol et
+
         map.on('movestart', function() {
             userInteracting = true;
             clearTimeout(interactionTimer);
@@ -219,7 +249,7 @@
                     }
 
                     const now = Date.now();
-                    if (destLat && destLng && (now - lastRerouteTime > 5000)) {
+                    if (destLat !== null && destLng !== null && (now - lastRerouteTime > 5000)) {
                         lastRerouteTime = now;
                         updateRoute(false);
                     }
@@ -285,10 +315,10 @@
         });
 
         async function updateRoute(fitBounds = false) {
-            if (!destLat || !destLng) return;
+            if (destLat === null || destLng === null) return;
 
             try {
-                // Rota URL'i hatasız şekilde düzeltildi
+                // Kesin ve hatasız rota URL yapısı
                 const url = `https://router.project-osrm.org/route/v1/driving/${currentLng},${currentLat};${destLng},${destLat}?overview=full&geometries=geojson`;
                 const routeRes = await fetch(url);
                 const routeData = await routeRes.json();
