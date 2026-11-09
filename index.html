@@ -6,7 +6,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="GTA Radar">
-    <title>GTA Radar (Fixed)</title>
+    <title>GTA Radar (Compass)</title>
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     
@@ -24,9 +24,9 @@
             z-index: 1000;
         }
         
-        /* Harita Zemini Filtresi */
+        /* Harita Zemini Filtresi (Grayscale %75'e ayarlandı) */
         .leaflet-tile-pane {
-            filter: grayscale(75%) invert(100%) sepia(10%) hue-rotate(180deg) brightness(80%) contrast(150%);
+            filter: grayscale(75%) invert(100%) sepia(10%) hue-rotate(180deg) brightness(85%) contrast(140%);
         }
         
         /* 3D Görünümlü Araç İkonu */
@@ -92,12 +92,59 @@
 
         .suggestion-item:last-child { border-bottom: none; }
         .suggestion-item:hover { background: #222; color: #fff; }
+
+        /* Sol Alt Şeffaf Pusula Tasarımı */
+        .compass-container {
+            position: absolute;
+            bottom: 30px;
+            left: 30px;
+            width: 60px;
+            height: 60px;
+            background: rgba(0, 0, 0, 0.6);
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            border-radius: 50%;
+            z-index: 1001;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.8);
+            backdrop-filter: blur(4px);
+        }
+
+        .compass-needle {
+            width: 0;
+            height: 0;
+            border-left: 8px solid transparent;
+            border-right: 8px solid transparent;
+            border-bottom: 22px solid #ff3b30; /* Kırmızı Kuzey Oku */
+            position: relative;
+            top: -4px;
+            transition: transform 0.15s linear;
+            filter: drop-shadow(0 0 2px rgba(0,0,0,0.8));
+        }
+        
+        .compass-needle::after {
+            content: '';
+            position: absolute;
+            top: 22px;
+            left: -8px;
+            width: 0;
+            height: 0;
+            border-left: 8px solid transparent;
+            border-right: 8px solid transparent;
+            border-top: 22px solid #ffffff; /* Beyaz Güney Ucu */
+        }
     </style>
 </head>
 <body>
     <div class="search-wrapper">
         <input type="text" id="search-box" placeholder="Gitmek İstediğiniz Adresi Yazın">
         <div id="suggestions"></div>
+    </div>
+
+    <!-- Şeffaf Pusula HTML -->
+    <div class="compass-container">
+        <div class="compass-needle" id="compass"></div>
     </div>
 
     <div id="map"></div>
@@ -130,13 +177,12 @@
 
         const carMarker = L.marker([currentLat, currentLng], { icon: carIcon }).addTo(map);
 
-        // Kullanıcı haritayı elle kaydırdığında
         map.on('movestart', function() {
             userInteracting = true;
             clearTimeout(interactionTimer);
         });
 
-        // Anlık GPS Takibi ve Otomatik Rota Güncelleme
+        // Anlık GPS ve Pusula Yönlendirmesi
         if (navigator.geolocation) {
             navigator.geolocation.watchPosition(
                 function(position) {
@@ -151,11 +197,15 @@
                     }
 
                     if (heading !== null && !isNaN(heading)) {
+                        // Araç ikonunu döndür
                         const carDiv = document.getElementById('car');
                         if (carDiv) { carDiv.style.transform = `rotate(${heading}deg)`; }
+
+                        // Pusula ibresini kuzeyi gösterecek şekilde ters yönde döndür
+                        const compassDiv = document.getElementById('compass');
+                        if (compassDiv) { compassDiv.style.transform = `rotate(${-heading}deg)`; }
                     }
 
-                    // Rota aktifse her 5 saniyede bir rotayı güncelle (yoldan sapma kontrolü)
                     const now = Date.now();
                     if (destLat && destLng && (now - lastRerouteTime > 5000)) {
                         lastRerouteTime = now;
@@ -171,7 +221,7 @@
             clearTimeout(interactionTimer);
             interactionTimer = setTimeout(() => {
                 userInteracting = false;
-            }, 60000); // 1 dakika sonra kamerayı tekrar araca bağla
+            }, 60000);
         });
 
         // Akıllı Arama
@@ -209,7 +259,7 @@
                                 
                                 destLat = parseFloat(item.lat);
                                 destLng = parseFloat(item.lon);
-                                updateRoute(true); // İlk çizimde haritayı rotaya odakla
+                                updateRoute(true);
                             };
                             suggestionsBox.appendChild(div);
                         });
@@ -222,12 +272,10 @@
             }, 600);
         });
 
-        // Rota Çizen ve Güncelleyen Fonksiyon
         async function updateRoute(fitBounds = false) {
             if (!destLat || !destLng) return;
 
             try {
-                // OSRM API İstirası (Doğru koordinat formatı)
                 const url = `https://router.project-osrm.org/route/v1/driving/${currentLng},${currentLat};${destLng},${destLat}?overview=full&geometries=geojson`;
                 const routeRes = await fetch(url);
                 const routeData = await routeRes.json();
@@ -238,7 +286,6 @@
 
                 if (routeLine) { map.removeLayer(routeLine); }
 
-                // GTA Waypoint Stili (Koyu Mor, Kalın ve Oval Köşeli)
                 routeLine = L.geoJSON(routeGeoJSON, {
                     style: {
                         color: '#7b00b3', 
