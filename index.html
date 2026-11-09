@@ -6,7 +6,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="GTA Radar">
-    <title>GTA Radar (Ultimate Route Fix)</title>
+    <title>GTA Radar (Hybrid Navigation)</title>
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     
@@ -164,6 +164,7 @@
         let userInteracting = false; 
         let interactionTimer = null;
         let lastRerouteTime = 0;
+        let currentHeading = 0;
 
         const map = L.map('map', {
             zoomControl: false,
@@ -198,19 +199,26 @@
             clearTimeout(interactionTimer);
         });
 
-        // Anlık Yön ve Pusula
+        // HİBRİT YÖN YÖNETİMİ (GPS Hareketi + Cihaz Pusulası Desteği)
         window.addEventListener('deviceorientation', function(e) {
             let heading = e.alpha; 
             if (heading !== null && !isNaN(heading)) {
                 if (e.webkitCompassHeading) { heading = e.webkitCompassHeading; }
-                
-                const carDiv = document.getElementById('car');
-                if (carDiv) { carDiv.style.transform = `rotate(${heading}deg)`; }
-
-                const compassDiv = document.getElementById('compass');
-                if (compassDiv) { compassDiv.style.transform = `rotate(${-heading}deg)`; }
+                // Sadece GPS yönü aktif değilse veya araç duruyorsa pusulayı kullan
+                if (!window.gpsHeadingActive) {
+                    updateHeading(heading);
+                }
             }
         }, true);
+
+        function updateHeading(deg) {
+            currentHeading = deg;
+            const carDiv = document.getElementById('car');
+            if (carDiv) { carDiv.style.transform = `rotate(${deg}deg)`; }
+
+            const compassDiv = document.getElementById('compass');
+            if (compassDiv) { compassDiv.style.transform = `rotate(${-deg}deg)`; }
+        }
 
         // Anlık GPS ve Rota Güncelleme
         if (navigator.geolocation) {
@@ -218,11 +226,20 @@
                 function(position) {
                     currentLat = position.coords.latitude;
                     currentLng = position.coords.longitude;
-                    
+                    const gpsHeading = position.coords.heading;
+
                     carMarker.setLatLng([currentLat, currentLng]);
                     
                     if (!userInteracting && !routeLine) {
                         map.panTo([currentLat, currentLng], { animate: true });
+                    }
+
+                    // Eğer GPS gerçek bir yön veriyorsa (araç hareket halindeyken) önceliği GPS'e ver
+                    if (gpsHeading !== null && !isNaN(gpsHeading) && gpsHeading >= 0) {
+                        window.gpsHeadingActive = true;
+                        updateHeading(gpsHeading);
+                    } else {
+                        window.gpsHeadingActive = false;
                     }
 
                     const now = Date.now();
@@ -278,8 +295,6 @@
                                 
                                 destLat = parseFloat(item.lat);
                                 destLng = parseFloat(item.lon);
-                                
-                                // Hedef seçildiğinde hemen rotayı çizdir
                                 updateRoute(true);
                             };
                             suggestionsBox.appendChild(div);
@@ -293,7 +308,7 @@
             }, 500);
         });
 
-        // Kesin Sonuç Veren Güçlendirilmiş Rota Motoru
+        // Kesin Sonuç Veren Rota Motoru (Garantili Mor Çizgi)
         async function updateRoute(fitBounds = false) {
             if (destLat === null || destLng === null) return;
 
@@ -304,32 +319,29 @@
             let latlngs = [];
 
             try {
-                // OSRM API çağrısı (Boylam,Enlem sırasına dikkat edilerek)
                 const url = `https://router.project-osrm.org/route/v1/driving/${currentLng},${currentLat};${destLng},${destLat}?overview=full&geometries=geojson`;
                 const routeRes = await fetch(url);
                 const routeData = await routeRes.json();
 
                 if (routeData.routes && routeData.routes.length > 0) {
                     const coords = routeData.routes[0].geometry.coordinates;
-                    latlngs = coords.map(c => [c[1], c[0]]); // [Enlem, Boylam] çevrimi
+                    latlngs = coords.map(c => [c[1], c[0]]);
                 }
             } catch (err) {
-                console.warn("API rotası alınamadı, yedek çizgiye geçiliyor.", err);
+                console.warn("API rotası alınamadı, yedek çizgiye geçiliyor.");
             }
 
-            // Eğer API yanıt vermezse veya yol bulunamazsa, doğrudan kesintisiz mor yön çizgisi çek
             if (latlngs.length === 0) {
                 latlngs = [[currentLat, currentLng], [destLat, destLng]];
             }
 
-            // GTA Waypoint Kalın Koyu Mor Çizgi (En üst katmanda render edilmesi için pane eklendi)
             routeLine = L.polyline(latlngs, {
                 color: '#7b00b3', 
                 weight: 12,       
                 opacity: 1.0,
                 lineCap: 'round', 
                 lineJoin: 'round',
-                pane: 'markerPane' // Harita zemin katmanlarının üzerinde kalmasını kesinleştirir
+                pane: 'markerPane'
             }).addTo(map);
 
             if (fitBounds) {
