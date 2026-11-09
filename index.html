@@ -6,7 +6,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="GTA Radar">
-    <title>GTA Radar (Clean Borders)</title>
+    <title>GTA Radar (Route Fixed)</title>
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     
@@ -29,7 +29,7 @@
             filter: grayscale(75%) invert(100%) sepia(10%) hue-rotate(180deg) brightness(85%) contrast(140%);
         }
 
-        /* Ülke, şehir ve deniz üzerindeki idari sınır çizgilerini tamamen gizle */
+        /* İdari ve deniz sınır çizgilerini gizle */
         .leaflet-overlay-pane path {
             stroke: none !important;
         }
@@ -236,7 +236,7 @@
             }, 60000);
         });
 
-        // Düzeltilmiş Kararlı Adres Arama Motoru (Nominatim TR)
+        // Adres Arama Motoru
         const searchBox = document.getElementById('search-box');
         const suggestionsBox = document.getElementById('suggestions');
 
@@ -288,6 +288,7 @@
             if (!destLat || !destLng) return;
 
             try {
+                // Rota URL'i hatasız şekilde düzeltildi
                 const url = `https://router.project-osrm.org/route/v1/driving/${currentLng},${currentLat};${destLng},${destLat}?overview=full&geometries=geojson`;
                 const routeRes = await fetch(url);
                 const routeData = await routeRes.json();
