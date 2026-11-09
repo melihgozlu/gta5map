@@ -6,7 +6,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="GTA Radar">
-    <title>GTA Radar (Clean & Working Route)</title>
+    <title>GTA Radar (Ultimate Route Fix)</title>
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     
@@ -278,6 +278,8 @@
                                 
                                 destLat = parseFloat(item.lat);
                                 destLng = parseFloat(item.lon);
+                                
+                                // Hedef seçildiğinde hemen rotayı çizdir
                                 updateRoute(true);
                             };
                             suggestionsBox.appendChild(div);
@@ -291,52 +293,47 @@
             }, 500);
         });
 
-        // Kesin Sonuç Veren Rota Çizme Fonksiyonu
+        // Kesin Sonuç Veren Güçlendirilmiş Rota Motoru
         async function updateRoute(fitBounds = false) {
             if (destLat === null || destLng === null) return;
 
+            if (routeLine) { 
+                map.removeLayer(routeLine); 
+            }
+
+            let latlngs = [];
+
             try {
-                // Alternatif ve daha kararlı rota servisi (Valhalla/OSRM birleşimi)
+                // OSRM API çağrısı (Boylam,Enlem sırasına dikkat edilerek)
                 const url = `https://router.project-osrm.org/route/v1/driving/${currentLng},${currentLat};${destLng},${destLat}?overview=full&geometries=geojson`;
                 const routeRes = await fetch(url);
                 const routeData = await routeRes.json();
 
-                if (routeLine) { 
-                    map.removeLayer(routeLine); 
-                }
-
-                let latlngs = [];
-
                 if (routeData.routes && routeData.routes.length > 0) {
-                    // API rotayı bulduyse onları kullan
                     const coords = routeData.routes[0].geometry.coordinates;
-                    latlngs = coords.map(c => [c[1], c[0]]);
-                } else {
-                    // API yanıt vermezse acil durum için doğrudan iki nokta arası güvenli düz/kesik hat çiz
-                    latlngs = [[currentLat, currentLng], [destLat, destLng]];
+                    latlngs = coords.map(c => [c[1], c[0]]); // [Enlem, Boylam] çevrimi
                 }
-
-                // GTA Waypoint Kalın Koyu Mor Çizgi
-                routeLine = L.polyline(latlngs, {
-                    color: '#7b00b3', 
-                    weight: 10,       
-                    opacity: 0.95,
-                    lineCap: 'round', 
-                    lineJoin: 'round' 
-                }).addTo(map);
-
-                if (fitBounds) {
-                    map.fitBounds(routeLine.getBounds(), { padding: [60, 60] });
-                }
-
             } catch (err) {
-                console.error("Rota çizim hatası:", err);
-                // Hata durumunda bile direkt çizgi çek
-                if (routeLine) { map.removeLayer(routeLine); }
-                routeLine = L.polyline([[currentLat, currentLng], [destLat, destLng]], {
-                    color: '#7b00b3', weight: 10, opacity: 0.95, lineCap: 'round', lineJoin: 'round'
-                }).addTo(map);
-                if (fitBounds) { map.fitBounds(routeLine.getBounds(), { padding: [60, 60] }); }
+                console.warn("API rotası alınamadı, yedek çizgiye geçiliyor.", err);
+            }
+
+            // Eğer API yanıt vermezse veya yol bulunamazsa, doğrudan kesintisiz mor yön çizgisi çek
+            if (latlngs.length === 0) {
+                latlngs = [[currentLat, currentLng], [destLat, destLng]];
+            }
+
+            // GTA Waypoint Kalın Koyu Mor Çizgi (En üst katmanda render edilmesi için pane eklendi)
+            routeLine = L.polyline(latlngs, {
+                color: '#7b00b3', 
+                weight: 12,       
+                opacity: 1.0,
+                lineCap: 'round', 
+                lineJoin: 'round',
+                pane: 'markerPane' // Harita zemin katmanlarının üzerinde kalmasını kesinleştirir
+            }).addTo(map);
+
+            if (fitBounds) {
+                map.fitBounds(routeLine.getBounds(), { padding: [60, 60] });
             }
         }
     </script>
