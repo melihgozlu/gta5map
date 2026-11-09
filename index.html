@@ -6,7 +6,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="GTA Radar">
-    <title>GTA Radar (Smart Routing)</title>
+    <title>GTA Radar (Custom Timer)</title>
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     
@@ -24,9 +24,9 @@
             z-index: 1000;
         }
         
-        /* Harita Zemini Filtresi (Siyah-Beyaz + İnvert + Matlaştırma) */
+        /* Harita Zemini Filtresi */
         .leaflet-tile-pane {
-            filter: grayscale(100%) invert(100%) sepia(10%) hue-rotate(180deg) brightness(85%) contrast(140%);
+            filter: grayscale(80%) invert(100%) sepia(10%) hue-rotate(180deg) brightness(85%) contrast(140%);
         }
         
         /* 3D Görünümlü Araç İkonu */
@@ -41,7 +41,7 @@
             transform-origin: 50% 50%;
         }
 
-        /* Arama Kutusu ve Otomatik Tamamlama Menüsü (HUD) */
+        /* Arama Kutusu ve Otomatik Tamamlama Menüsü */
         .search-wrapper {
             position: absolute;
             top: 20px;
@@ -78,7 +78,7 @@
             overflow-y: auto;
             box-shadow: 0 4px 15px rgba(0,0,0,0.9);
             backdrop-filter: blur(5px);
-            display: none; /* Varsayılan olarak gizli */
+            display: none;
         }
 
         .suggestion-item {
@@ -96,7 +96,7 @@
 </head>
 <body>
     <div class="search-wrapper">
-        <input type="text" id="search-box" placeholder="Hedef ara... (Örn: Kent Plaza)">
+        <input type="text" id="search-box" placeholder="gitmek istediğiniz adresi yazın">
         <div id="suggestions"></div>
     </div>
 
@@ -108,6 +108,8 @@
         let currentLng = 32.48;
         let routeLine = null; 
         let searchTimeout = null;
+        let userInteracting = false; // Kullanıcının haritayı kaydırıp kaydırmadığını takip eder
+        let interactionTimer = null;
 
         const map = L.map('map', {
             zoomControl: false,
@@ -125,6 +127,13 @@
 
         const carMarker = L.marker([currentLat, currentLng], { icon: carIcon }).addTo(map);
 
+        // Kullanıcı haritayı elle kaydırmaya başladığında (dokunduğunda veya fareyle tuttuğunda)
+        map.on('movestart', function() {
+            // Eğer rota çizilmemişse veya otomatik tetiklenmiyorsa kullanıcı etkileşimini başlat
+            userInteracting = true;
+            clearTimeout(interactionTimer);
+        });
+
         // GPS Takibi
         if (navigator.geolocation) {
             navigator.geolocation.watchPosition(
@@ -135,7 +144,8 @@
 
                     carMarker.setLatLng([currentLat, currentLng]);
                     
-                    if (!routeLine) {
+                    // Eğer kullanıcı haritayı kaydırmadıysa veya 60 saniye geçdiyse kamerayı arabaya odakla
+                    if (!userInteracting && !routeLine) {
                         map.panTo([currentLat, currentLng], { animate: true });
                     }
 
@@ -149,11 +159,19 @@
             );
         }
 
-        // --- AKILLI ARAMA VE ROTA MOTORU ---
+        // Kullanıcı haritayı elle kaydırdıktan sonra 60 saniye boyunca kamera serbest kalır
+        map.on('dragend', function() {
+            clearTimeout(interactionTimer);
+            // 60 saniye = 60000 milisaniye
+            interactionTimer = setTimeout(() => {
+                userInteracting = false;
+            }, 60000);
+        });
+
+        // Akıllı Arama
         const searchBox = document.getElementById('search-box');
         const suggestionsBox = document.getElementById('suggestions');
 
-        // Kullanıcı yazı yazdıkça (Yarım saniye gecikmeli arama yapar)
         searchBox.addEventListener('input', function() {
             clearTimeout(searchTimeout);
             const query = this.value;
@@ -165,26 +183,24 @@
 
             searchTimeout = setTimeout(async () => {
                 try {
-                    // API'ye arama isteği at (Konya ağırlıklı sonuçlar için limit koyduk)
                     const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=5&q=${encodeURIComponent(query)}`);
                     const data = await res.json();
 
-                    suggestionsBox.innerHTML = ''; // Eski listeyi temizle
+                    suggestionsBox.innerHTML = '';
 
                     if (data.length > 0) {
                         suggestionsBox.style.display = 'block';
                         data.forEach(item => {
                             const div = document.createElement('div');
                             div.className = 'suggestion-item';
-                            // Adresi parçalayıp daha okunaklı göster
                             div.innerText = item.display_name; 
                             
-                            // Seçeneğe tıklandığında rotayı çiz
                             div.onclick = function() {
-                                searchBox.value = item.display_name.split(',')[0]; // Sadece ilk kısmı kutuya yaz
-                                suggestionsBox.style.display = 'none'; // Listeyi kapat
-                                searchBox.blur(); // Klavyeyi kapat
-                                drawRoute(item.lat, item.lon); // Rota fonksiyonunu çağır
+                                searchBox.value = item.display_name.split(',')[0];
+                                suggestionsBox.style.display = 'none';
+                                searchBox.blur();
+                                userInteracting = false; // Rota çizilince kamerayı hedefe kilitlemek için sıfırla
+                                drawRoute(item.lat, item.lon);
                             };
                             suggestionsBox.appendChild(div);
                         });
@@ -194,10 +210,9 @@
                 } catch (err) {
                     console.error("Arama hatası", err);
                 }
-            }, 600); // 600ms bekleme süresi
+            }, 600);
         });
 
-        // Tıklanan hedefe rota çizen fonksiyon
         async function drawRoute(destLat, destLng) {
             try {
                 const routeRes = await fetch(`https://router.project-osrm.org/route/v1/driving/${currentLng},${currentLat};${destLng},${destLat}?overview=full&geometries=geojson`);
@@ -209,14 +224,13 @@
 
                 if (routeLine) { map.removeLayer(routeLine); }
 
-                // GTA Waypoint Stili (Daha kalın, koyu mor, yuvarlak köşeler)
                 routeLine = L.geoJSON(routeGeoJSON, {
                     style: {
-                        color: '#7b00b3', // Daha koyu mor
-                        weight: 10,       // Kalınlaştırıldı
+                        color: '#7b00b3', 
+                        weight: 10,       
                         opacity: 0.9,
-                        lineCap: 'round', // Çizgi uçlarını yuvarlar
-                        lineJoin: 'round' // Çizgi dönüş köşelerini yuvarlar
+                        lineCap: 'round', 
+                        lineJoin: 'round' 
                     }
                 }).addTo(map);
 
