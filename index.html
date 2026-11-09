@@ -6,7 +6,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="GTA Radar">
-    <title>GTA Radar (Consistent Grayscale)</title>
+    <title>GTA Radar (Pro Gyro Nav)</title>
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     
@@ -24,7 +24,7 @@
             z-index: 1000;
         }
         
-        /* Harita Zemini Filtresi (Her zoom seviyesinde sabit ve net Grayscale %75) */
+        /* Harita Zemini Filtresi (Grayscale %75 - Her zoom seviyesinde sabit) */
         .leaflet-tile-pane {
             filter: grayscale(75%) invert(100%) sepia(10%) hue-rotate(180deg) brightness(85%) contrast(140%);
         }
@@ -33,7 +33,7 @@
         .leaflet-overlay-pane path { stroke: none !important; }
         .leaflet-tile { border: none !important; outline: none !important; }
         
-        /* 3D Görünümlü Araç İkonu */
+        /* 3D Profesyonel Araç İkonu (Yumuşak dönüş geçişi) */
         .car-marker {
             width: 0; 
             height: 0; 
@@ -41,7 +41,7 @@
             border-right: 14px solid transparent;
             border-bottom: 32px solid #ffffff;
             filter: drop-shadow(0px 4px 6px rgba(0,0,0,0.9));
-            transition: transform 0.1s linear;
+            transition: transform 0.12s cubic-bezier(0.25, 1, 0.5, 1);
             transform-origin: 50% 50%;
         }
 
@@ -94,58 +94,12 @@
             font-size: 14px;
         }
         .suggestion-item:hover { background: #222; color: #fff; }
-
-        /* Sol Alt Şeffaf Pusula */
-        .compass-container {
-            position: absolute;
-            bottom: 30px;
-            left: 30px;
-            width: 60px;
-            height: 60px;
-            background: rgba(0, 0, 0, 0.6);
-            border: 2px solid rgba(255, 255, 255, 0.2);
-            border-radius: 50%;
-            z-index: 1001;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.8);
-            backdrop-filter: blur(4px);
-        }
-
-        .compass-needle {
-            width: 0;
-            height: 0;
-            border-left: 8px solid transparent;
-            border-right: 8px solid transparent;
-            border-bottom: 22px solid #ff3b30; 
-            position: relative;
-            top: -4px;
-            transition: transform 0.08s linear;
-            filter: drop-shadow(0 0 2px rgba(0,0,0,0.8));
-        }
-        
-        .compass-needle::after {
-            content: '';
-            position: absolute;
-            top: 22px;
-            left: -8px;
-            width: 0;
-            height: 0;
-            border-left: 8px solid transparent;
-            border-right: 8px solid transparent;
-            border-top: 22px solid #ffffff; 
-        }
     </style>
 </head>
 <body>
     <div class="search-wrapper">
         <input type="text" id="search-box" placeholder="Gitmek İstediğiniz Adresi Yazın">
         <div id="suggestions"></div>
-    </div>
-
-    <div class="compass-container">
-        <div class="compass-needle" id="compass"></div>
     </div>
 
     <div id="map"></div>
@@ -161,7 +115,8 @@
         let userInteracting = false; 
         let interactionTimer = null;
         let lastRerouteTime = 0;
-        let currentHeading = 0;
+        
+        let smoothedHeading = 0; // Profesyonel açı yumuşatma için hafıza
 
         const map = L.map('map', {
             zoomControl: false,
@@ -184,27 +139,39 @@
             clearTimeout(interactionTimer);
         });
 
-        // Hibrit Yön Yönetimi (GPS Hareketi + Cihaz Pusulası Desteği)
+        // --- PROFESYONEL AÇI İNTERPOLASYON (YUMUŞATMA) MOTORU ---
+        function getShortestAngleDiff(target, current) {
+            let diff = (target - current) % 360;
+            if (diff < -180) diff += 360;
+            if (diff > 180) diff -= 360;
+            return diff;
+        }
+
+        function updateCarHeading(targetHeading) {
+            // Açı farkını hesapla ve EMA filtresi ile yumuşat (0.25 katsayısı sarsıntıyı yok eder)
+            let diff = getShortestAngleDiff(targetHeading, smoothedHeading);
+            smoothedHeading = (smoothedHeading + diff * 0.25 + 360) % 360;
+
+            const carDiv = document.getElementById('car');
+            if (carDiv) { 
+                carDiv.style.transform = `rotate(${smoothedHeading}deg)`; 
+            }
+        }
+
+        // Cihaz Yönü (Gyro / Magnetometer) Dinleyicisi
         window.addEventListener('deviceorientation', function(e) {
             let heading = e.alpha; 
             if (heading !== null && !isNaN(heading)) {
-                if (e.webkitCompassHeading) { heading = e.webkitCompassHeading; }
+                if (e.webkitCompassHeading) { 
+                    heading = e.webkitCompassHeading; // iOS için gerçek kuzey
+                }
                 if (!window.gpsHeadingActive) {
-                    updateHeading(heading);
+                    updateCarHeading(heading);
                 }
             }
         }, true);
 
-        function updateHeading(deg) {
-            currentHeading = deg;
-            const carDiv = document.getElementById('car');
-            if (carDiv) { carDiv.style.transform = `rotate(${deg}deg)`; }
-
-            const compassDiv = document.getElementById('compass');
-            if (compassDiv) { compassDiv.style.transform = `rotate(${-deg}deg)`; }
-        }
-
-        // Anlık GPS ve Rota Güncelleme
+        // Anlık GPS ve Hibrit Yön Yönetimi
         if (navigator.geolocation) {
             navigator.geolocation.watchPosition(
                 function(position) {
@@ -218,9 +185,10 @@
                         map.panTo([currentLat, currentLng], { animate: true });
                     }
 
+                    // Hareket halindeyken GPS yönünü devreye sok
                     if (gpsHeading !== null && !isNaN(gpsHeading) && gpsHeading >= 0) {
                         window.gpsHeadingActive = true;
-                        updateHeading(gpsHeading);
+                        updateCarHeading(gpsHeading);
                     } else {
                         window.gpsHeadingActive = false;
                     }
