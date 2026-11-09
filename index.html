@@ -7,16 +7,21 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="GTA Radar">
-    <title>GTA Radar (Free)</title>
+    <title>GTA Radar (Free Dark)</title>
     
-    <!-- Ücretsiz Harita Kütüphanesi (Leaflet CSS) -->
+    <!-- Ücretsiz Harita Kütüphanesi -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     
     <style>
         /* Haritayı tam ekran yap */
-        html, body, #map { height: 100%; width: 100%; margin: 0; padding: 0; background-color: #000; overflow: hidden; }
+        html, body, #map { height: 100%; width: 100%; margin: 0; padding: 0; background-color: #111; overflow: hidden; }
         
-        /* Araba İkonu Tasarımı (Beyaz GTA Oku) */
+        /* İŞTE SİHİRLİ KOD: Standart haritayı Gece Moduna çevirir */
+        .leaflet-tile-pane {
+            filter: invert(100%) hue-rotate(180deg) brightness(95%) contrast(105%);
+        }
+        
+        /* Araba İkonu Tasarımı (Beyaz Ok) */
         .car-marker {
             width: 0; 
             height: 0; 
@@ -24,7 +29,7 @@
             border-right: 12px solid transparent;
             border-bottom: 28px solid #ffffff;
             filter: drop-shadow(0px 0px 4px #000000);
-            transition: transform 0.2s linear; /* Dönüşlerin yumuşak olması için */
+            transition: transform 0.2s linear;
             transform-origin: 50% 50%;
         }
     </style>
@@ -32,32 +37,30 @@
 <body>
     <div id="map"></div>
 
-    <!-- Ücretsiz Harita Kütüphanesi (Leaflet JS) -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
-        // Haritayı Konya merkezli başlat (Google butonları olmadan temiz ekran)
+        // Haritayı başlat
         const map = L.map('map', {
             zoomControl: false 
-        }).setView([37.87, 32.48], 17);
+        }).setView([37.87, 32.48], 17); // Konya Merkez
 
-        // API Kodu Gerektirmeyen Tamamen Siyah Harita Katmanı
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-            attribution: '', // Alt yazıları gizlemek istersen burayı boş bırakabilirsin
-            subdomains: 'abcd',
-            maxZoom: 20
+        // Tamamen ücretsiz, API gerektirmeyen standart OpenStreetMap (CSS ile karartıldı)
+        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: ''
         }).addTo(map);
 
-        // Araba İkonunu Haritaya Ekle
+        // Araba İkonunu Ekle
         const carIcon = L.divIcon({
             html: '<div class="car-marker" id="car"></div>',
-            className: '', // Varsayılan beyaz kutuyu kaldır
+            className: '',
             iconSize: [24, 28],
-            iconAnchor: [12, 14] // İkonun tam ortası merkez olsun
+            iconAnchor: [12, 14]
         });
 
         const carMarker = L.marker([37.87, 32.48], { icon: carIcon }).addTo(map);
 
-        // iOS Safari Üzerinden Anlık GPS Takibi
+        // GPS Takibi (PC'de sabit durabilir, iPad'de hareket eder)
         if (navigator.geolocation) {
             navigator.geolocation.watchPosition(
                 function(position) {
@@ -65,11 +68,9 @@
                     const lng = position.coords.longitude;
                     const heading = position.coords.heading;
 
-                    // İkonun ve haritanın konumunu kaydır
                     carMarker.setLatLng([lat, lng]);
                     map.panTo([lat, lng], { animate: true });
 
-                    // iPad/iPhone'dan yön (pusula) verisi geliyorsa oku döndür
                     if (heading !== null && !isNaN(heading)) {
                         const carDiv = document.getElementById('car');
                         if (carDiv) {
@@ -78,7 +79,7 @@
                     }
                 },
                 function(error) {
-                    console.warn("GPS Hatası: Cihaz konum bulamıyor.");
+                    console.warn("GPS Bekleniyor...");
                 },
                 { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 }
             );
