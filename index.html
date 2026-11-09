@@ -6,7 +6,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="GTA Radar">
-    <title>GTA Radar (Ultimate)</title>
+    <title>GTA Radar (Clean Borders)</title>
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     
@@ -24,12 +24,16 @@
             z-index: 1000;
         }
         
-        /* Harita Zemini Filtresi (Grayscale %75 ve Deniz çizgilerini yok eden tonlama) */
+        /* Harita Zemini Filtresi (Grayscale %75) */
         .leaflet-tile-pane {
             filter: grayscale(75%) invert(100%) sepia(10%) hue-rotate(180deg) brightness(85%) contrast(140%);
         }
 
-        /* Denizlerin üzerindeki o istenmeyen çizgileri ve parlamaları tamamen gizle */
+        /* Ülke, şehir ve deniz üzerindeki idari sınır çizgilerini tamamen gizle */
+        .leaflet-overlay-pane path {
+            stroke: none !important;
+        }
+
         .leaflet-tile {
             border: none !important;
             outline: none !important;
@@ -232,7 +236,7 @@
             }, 60000);
         });
 
-        // Güçlendirilmiş Çoklu Adres Arama Motoru (Photon + Nominatim)
+        // Düzeltilmiş Kararlı Adres Arama Motoru (Nominatim TR)
         const searchBox = document.getElementById('search-box');
         const suggestionsBox = document.getElementById('suggestions');
 
@@ -247,33 +251,26 @@
 
             searchTimeout = setTimeout(async () => {
                 try {
-                    // Daha gelişmiş sonuçlar için Photon API (OpenStreetMap tabanlı güçlü arama)
-                    const res = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&limit=6&lat=${currentLat}&lon=${currentLng}&lang=tr`);
+                    const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=6&countrycodes=tr&q=${encodeURIComponent(query)}`);
                     const data = await res.json();
 
                     suggestionsBox.innerHTML = '';
 
-                    if (data.features && data.features.length > 0) {
+                    if (data.length > 0) {
                         suggestionsBox.style.display = 'block';
-                        data.features.forEach(item => {
-                            const props = item.properties;
-                            // Adres bileşenlerini okunabilir bir formata getir
-                            let nameParts = [props.name, props.street, props.city, props.state].filter(Boolean);
-                            let displayName = nameParts.join(', ');
-
+                        data.forEach(item => {
                             const div = document.createElement('div');
                             div.className = 'suggestion-item';
-                            div.innerText = displayName; 
+                            div.innerText = item.display_name; 
                             
                             div.onclick = function() {
-                                searchBox.value = props.name || displayName.split(',')[0];
+                                searchBox.value = item.display_name.split(',')[0];
                                 suggestionsBox.style.display = 'none';
                                 searchBox.blur();
                                 userInteracting = false;
                                 
-                                // Koordinatlar [Boylam, Enlem] şeklinde gelir
-                                destLng = item.geometry.coordinates[0];
-                                destLat = item.geometry.coordinates[1];
+                                destLat = parseFloat(item.lat);
+                                destLng = parseFloat(item.lon);
                                 updateRoute(true);
                             };
                             suggestionsBox.appendChild(div);
@@ -284,7 +281,7 @@
                 } catch (err) {
                     console.error("Arama hatası", err);
                 }
-            }, 400);
+            }, 500);
         });
 
         async function updateRoute(fitBounds = false) {
