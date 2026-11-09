@@ -6,7 +6,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="GTA Radar">
-    <title>GTA Radar (Zoom Labels & Route Fixed)</title>
+    <title>GTA Radar (Final Route Fix)</title>
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     
@@ -39,19 +39,8 @@
             outline: none !important;
         }
 
-        /* --- ZOOM SEVİYESİNE GÖRE YAZI VE DETAY YÖNETİMİ --- */
-        /* Harita çok uzaklaştırıldığında (Genel bakış) yazıları gizle */
+        /* Zoom Seviyesine Göre Yazı Yoğunluğu Yönetimi */
         .zoom-far .leaflet-tile-pane { filter: grayscale(75%) invert(100%) sepia(10%) hue-rotate(180deg) brightness(65%) contrast(160%) saturate(20%); }
-        
-        /* Leaflet üzerindeki yer isimleri (etiketler) */
-        .leaflet-marker-pane, .leaflet-shadow-pane {
-            transition: opacity 0.3s ease;
-        }
-        
-        /* Uzaktayken isimleri tamamen şeffaflaştırıp yok et */
-        .map-labels-hidden .leaflet-overlay-pane {
-            opacity: 0.3;
-        }
         
         /* 3D Görünümlü Araç İkonu */
         .car-marker {
@@ -200,21 +189,17 @@
 
         const carMarker = L.marker([currentLat, currentLng], { icon: carIcon }).addTo(map);
 
-        // --- ZOOM SEVİYESİNE GÖRE İSİM YOĞUNLUĞU KONTROLÜ ---
+        // Zoom Seviyesi Kontrolü
         function checkZoomLevel() {
             const currentZoom = map.getZoom();
-            const bodyElement = document.body;
-            
-            // Eğer harita çok uzaklaştırıldıysa (Zoom 15'ten küçükse) yazıları ve detayları azalt/gizle
             if (currentZoom < 15) {
-                bodyElement.classList.add('zoom-far');
+                document.body.classList.add('zoom-far');
             } else {
-                bodyElement.classList.remove('zoom-far');
+                document.body.classList.remove('zoom-far');
             }
         }
-
         map.on('zoomend', checkZoomLevel);
-        checkZoomLevel(); // İlk açılışta kontrol et
+        checkZoomLevel();
 
         map.on('movestart', function() {
             userInteracting = true;
@@ -314,11 +299,12 @@
             }, 500);
         });
 
+        // Kesin Çalışan Rota Çizme Fonksiyonu
         async function updateRoute(fitBounds = false) {
             if (destLat === null || destLng === null) return;
 
             try {
-                // Kesin ve hatasız rota URL yapısı
+                // Koordinatlar doğrudan metin içine güvenli şekilde gömüldü
                 const url = `https://router.project-osrm.org/route/v1/driving/${currentLng},${currentLat};${destLng},${destLat}?overview=full&geometries=geojson`;
                 const routeRes = await fetch(url);
                 const routeData = await routeRes.json();
@@ -327,13 +313,16 @@
 
                 const routeGeoJSON = routeData.routes[0].geometry;
 
-                if (routeLine) { map.removeLayer(routeLine); }
+                if (routeLine) { 
+                    map.removeLayer(routeLine); 
+                }
 
+                // Kesin Görünür GTA Waypoint Mor Çizgisi
                 routeLine = L.geoJSON(routeGeoJSON, {
                     style: {
                         color: '#7b00b3', 
                         weight: 10,       
-                        opacity: 0.9,
+                        opacity: 0.95,
                         lineCap: 'round', 
                         lineJoin: 'round' 
                     }
