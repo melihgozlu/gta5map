@@ -6,7 +6,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="GTA Radar">
-    <title>GTA Radar (Custom Timer)</title>
+    <title>GTA Radar (Live Navigation)</title>
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     
@@ -24,9 +24,14 @@
             z-index: 1000;
         }
         
-        /* Harita Zemini Filtresi */
+        /* Harita Zemini Filtresi (Sınır çizgileri ve renk karmaşası yok edildi) */
         .leaflet-tile-pane {
-            filter: grayscale(80%) invert(100%) sepia(10%) hue-rotate(180deg) brightness(85%) contrast(140%);
+            filter: grayscale(100%) invert(100%) sepia(10%) hue-rotate(180deg) brightness(80%) contrast(150%);
+        }
+
+        /* Ülke/İlçe sınır çizgilerini ve etiketlerini tamamen gizle */
+        .leaflet-interactive {
+            stroke: none !important;
         }
         
         /* 3D Görünümlü Araç İkonu */
@@ -96,7 +101,7 @@
 </head>
 <body>
     <div class="search-wrapper">
-        <input type="text" id="search-box" placeholder="gitmek istediğiniz adresi yazın">
+        <input type="text" id="search-box" placeholder="Gitmek İstediğiniz Adresi Yazın">
         <div id="suggestions"></div>
     </div>
 
@@ -106,10 +111,13 @@
     <script>
         let currentLat = 37.87;
         let currentLng = 32.48;
+        let destLat = null;
+        let destLng = null;
         let routeLine = null; 
         let searchTimeout = null;
-        let userInteracting = false; // Kullanıcının haritayı kaydırıp kaydırmadığını takip eder
+        let userInteracting = false; 
         let interactionTimer = null;
+        let lastRerouteTime = 0;
 
         const map = L.map('map', {
             zoomControl: false,
@@ -127,14 +135,13 @@
 
         const carMarker = L.marker([currentLat, currentLng], { icon: carIcon }).addTo(map);
 
-        // Kullanıcı haritayı elle kaydırmaya başladığında (dokunduğunda veya fareyle tuttuğunda)
+        // Kullanıcı haritayı elle kaydırdığında
         map.on('movestart', function() {
-            // Eğer rota çizilmemişse veya otomatik tetiklenmiyorsa kullanıcı etkileşimini başlat
             userInteracting = true;
             clearTimeout(interactionTimer);
         });
 
-        // GPS Takibi
+        // Anlık GPS Takibi ve Otomatik Rota Güncelleme (Yolu kaçırma kontrolü)
         if (navigator.geolocation) {
             navigator.geolocation.watchPosition(
                 function(position) {
@@ -144,7 +151,6 @@
 
                     carMarker.setLatLng([currentLat, currentLng]);
                     
-                    // Eğer kullanıcı haritayı kaydırmadıysa veya 60 saniye geçdiyse kamerayı arabaya odakla
                     if (!userInteracting && !routeLine) {
                         map.panTo([currentLat, currentLng], { animate: true });
                     }
@@ -153,19 +159,24 @@
                         const carDiv = document.getElementById('car');
                         if (carDiv) { carDiv.style.transform = `rotate(${heading}deg)`; }
                     }
+
+                    // Eğer bir hedef seçilmişse, araç hareket ettikçe (ve her 5 saniyede bir) rotayı yeniden hesapla
+                    const now = Date.now();
+                    if (destLat && destLng && (now - lastRerouteTime > 5000)) {
+                        lastRerouteTime = now;
+                        updateRoute();
+                    }
                 },
                 function(error) { console.warn("GPS Bekleniyor..."); },
                 { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 }
             );
         }
 
-        // Kullanıcı haritayı elle kaydırdıktan sonra 60 saniye boyunca kamera serbest kalır
         map.on('dragend', function() {
             clearTimeout(interactionTimer);
-            // 60 saniye = 60000 milisaniye
             interactionTimer = setTimeout(() => {
                 userInteracting = false;
-            }, 60000);
+            }, 60000); // 1 dakika sonra kamerayı tekrar araca bağla
         });
 
         // Akıllı Arama
@@ -199,8 +210,12 @@
                                 searchBox.value = item.display_name.split(',')[0];
                                 suggestionsBox.style.display = 'none';
                                 searchBox.blur();
-                                userInteracting = false; // Rota çizilince kamerayı hedefe kilitlemek için sıfırla
-                                drawRoute(item.lat, item.lon);
+                                userInteracting = false;
+                                
+                                // Hedef koordinatlarını kaydet ve rotayı çiz
+                                destLat = parseFloat(item.lat);
+                                destLng = parseFloat(item.lon);
+                                updateRoute(true); // İlk çizimde kamerayı sığdır
                             };
                             suggestionsBox.appendChild(div);
                         });
@@ -213,7 +228,10 @@
             }, 600);
         });
 
-        async function drawRoute(destLat, destLng) {
+        // Rota Çizen ve Güncelleyen Fonksiyon
+        async function updateRoute(fitBounds = false) {
+            if (!destLat || !destLng) return;
+
             try {
                 const routeRes = await fetch(`https://router.project-osrm.org/route/v1/driving/${currentLng},${currentLat};${destLng},${destLat}?overview=full&geometries=geojson`);
                 const routeData = await routeRes.json();
@@ -224,6 +242,7 @@
 
                 if (routeLine) { map.removeLayer(routeLine); }
 
+                // GTA Waypoint Stili (Koyu Mor, Kalın ve Oval Köşeli)
                 routeLine = L.geoJSON(routeGeoJSON, {
                     style: {
                         color: '#7b00b3', 
@@ -234,10 +253,13 @@
                     }
                 }).addTo(map);
 
-                map.fitBounds(routeLine.getBounds(), { padding: [60, 60] });
+                // Sadece ilk arama yapıldığında haritayı rotaya odakla, sürüş esnasında kamerayı sarsma
+                if (fitBounds) {
+                    map.fitBounds(routeLine.getBounds(), { padding: [60, 60] });
+                }
 
             } catch (err) {
-                console.error("Rota çizimi hatası", err);
+                console.error("Rota güncelleme hatası", err);
             }
         }
     </script>
