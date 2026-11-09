@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <!-- iOS Araç Ekranı (Tam Ekran) Ayarları -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="GTA Radar">
+    <title>GTA Radar</title>
+    <style>
+        /* Haritayı kenar boşluksuz tam ekran yap */
+        html, body, #map { height: 100%; width: 100%; margin: 0; padding: 0; background-color: #000; overflow: hidden; }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+
+    <script>
+        let map;
+        let carMarker;
+
+        function initMap() {
+            // Snazzy Maps'teki GTA 5 (113725) Stil Kodları
+            const gta5Style = [
+                { "featureType": "administrative", "elementType": "geometry", "stylers": [ { "visibility": "off" } ] },
+                { "featureType": "poi", "stylers": [ { "visibility": "off" } ] },
+                { "featureType": "road", "elementType": "labels.icon", "stylers": [ { "visibility": "off" } ] },
+                { "featureType": "transit", "stylers": [ { "visibility": "off" } ] },
+                { "featureType": "water", "elementType": "labels.text", "stylers": [ { "visibility": "off" } ] },
+                { "featureType": "water", "elementType": "geometry.fill", "stylers": [ { "color": "#0d1117" } ] },
+                { "featureType": "landscape", "elementType": "geometry.fill", "stylers": [ { "color": "#212b38" } ] },
+                { "featureType": "road.highway", "elementType": "geometry.fill", "stylers": [ { "color": "#303946" } ] },
+                { "featureType": "road.highway", "elementType": "geometry.stroke", "stylers": [ { "color": "#171d26" }, { "weight": 1.5 } ] },
+                { "featureType": "road.arterial", "elementType": "geometry.fill", "stylers": [ { "color": "#2b3440" } ] },
+                { "featureType": "road.arterial", "elementType": "geometry.stroke", "stylers": [ { "color": "#171d26" }, { "weight": 1 } ] },
+                { "featureType": "road.local", "elementType": "geometry.fill", "stylers": [ { "color": "#28313d" } ] },
+                { "featureType": "road.local", "elementType": "geometry.stroke", "stylers": [ { "color": "#171d26" }, { "weight": 0.5 } ] },
+                { "featureType": "administrative.country", "elementType": "labels.text.fill", "stylers": [ { "color": "#8c9fb8" } ] },
+                { "featureType": "administrative.locality", "elementType": "labels.text.fill", "stylers": [ { "color": "#8c9fb8" } ] },
+                { "featureType": "road", "elementType": "labels.text.fill", "stylers": [ { "color": "#5c6a7a" } ] }
+            ];
+
+            // Haritayı Konya merkezli olarak başlat
+            map = new google.maps.Map(document.getElementById('map'), {
+                center: { lat: 37.87, lng: 32.48 },
+                zoom: 17,
+                styles: gta5Style,
+                disableDefaultUI: true, // Google butonlarını ve arayüzünü gizle
+                tilt: 50, // 3D Navigasyon açısı
+                heading: 0
+            });
+
+            // GTA stili araba ikonu (Beyaz Ok)
+            carMarker = new google.maps.Marker({
+                position: map.getCenter(),
+                map: map,
+                icon: {
+                    path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
+                    scale: 7,
+                    fillColor: "#ffffff",
+                    fillOpacity: 1,
+                    strokeWeight: 2,
+                    strokeColor: "#000000",
+                    rotation: 0
+                }
+            });
+
+            // iOS Safari üzerinden anlık GPS takibini başlat
+            if (navigator.geolocation) {
+                navigator.geolocation.watchPosition(
+                    function(position) {
+                        const pos = { lat: position.coords.latitude, lng: position.coords.longitude };
+                        
+                        // İkonu ve haritayı yeni konuma kaydır
+                        carMarker.setPosition(pos);
+                        map.setCenter(pos);
+                        
+                        // Cihazdan yön (heading) verisi geliyorsa, ikonu ve harita açısını döndür
+                        if (position.coords.heading !== null && !isNaN(position.coords.heading)) {
+                            const icon = carMarker.getIcon();
+                            icon.rotation = position.coords.heading;
+                            carMarker.setIcon(icon);
+                            map.setHeading(position.coords.heading);
+                        }
+                    },
+                    function(error) {
+                        console.warn("GPS Hatası: Lütfen cihazın konum servislerini açın.");
+                    },
+                    { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 }
+                );
+            }
+        }
+    </script>
+    
+    <!-- API ANAHTARINI BURAYA YAZACAKSIN -->
+    <script async defer src="https://maps.googleapis.com/maps/api/js?key=BURAYA_API_ANAHTARINI_YAZ&callback=initMap"></script>
+</body>
+</html>
