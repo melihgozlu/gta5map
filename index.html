@@ -6,7 +6,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="GTA Radar">
-    <title>GTA Radar (Compass)</title>
+    <title>GTA Radar (Pro Navigation)</title>
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     
@@ -24,7 +24,7 @@
             z-index: 1000;
         }
         
-        /* Harita Zemini Filtresi (Grayscale %75'e ayarlandı) */
+        /* Harita Zemini Filtresi (Grayscale %75) */
         .leaflet-tile-pane {
             filter: grayscale(75%) invert(100%) sepia(10%) hue-rotate(180deg) brightness(85%) contrast(140%);
         }
@@ -37,7 +37,7 @@
             border-right: 14px solid transparent;
             border-bottom: 32px solid #ffffff;
             filter: drop-shadow(0px 4px 6px rgba(0,0,0,0.9));
-            transition: transform 0.15s linear;
+            transition: transform 0.1s linear;
             transform-origin: 50% 50%;
         }
 
@@ -116,10 +116,10 @@
             height: 0;
             border-left: 8px solid transparent;
             border-right: 8px solid transparent;
-            border-bottom: 22px solid #ff3b30; /* Kırmızı Kuzey Oku */
+            border-bottom: 22px solid #ff3b30; 
             position: relative;
             top: -4px;
-            transition: transform 0.15s linear;
+            transition: transform 0.08s linear;
             filter: drop-shadow(0 0 2px rgba(0,0,0,0.8));
         }
         
@@ -132,7 +132,7 @@
             height: 0;
             border-left: 8px solid transparent;
             border-right: 8px solid transparent;
-            border-top: 22px solid #ffffff; /* Beyaz Güney Ucu */
+            border-top: 22px solid #ffffff; 
         }
     </style>
 </head>
@@ -142,7 +142,6 @@
         <div id="suggestions"></div>
     </div>
 
-    <!-- Şeffaf Pusula HTML -->
     <div class="compass-container">
         <div class="compass-needle" id="compass"></div>
     </div>
@@ -182,28 +181,34 @@
             clearTimeout(interactionTimer);
         });
 
-        // Anlık GPS ve Pusula Yönlendirmesi
+        // Anlık Yön ve Pusula Tepkisi (Cihaz Yönelimi - Pusula Sensörü)
+        window.addEventListener('deviceorientation', function(e) {
+            let heading = e.alpha; // Cihazın kendi pusula yönü
+            if (heading !== null && !isNaN(heading)) {
+                // iOS cihazlarda alpha değeri ters dönebilir, webkitCompassHeading varsa onu kullan
+                if (e.webkitCompassHeading) {
+                    heading = e.webkitCompassHeading;
+                }
+                
+                const carDiv = document.getElementById('car');
+                if (carDiv) { carDiv.style.transform = `rotate(${heading}deg)`; }
+
+                const compassDiv = document.getElementById('compass');
+                if (compassDiv) { compassDiv.style.transform = `rotate(${-heading}deg)`; }
+            }
+        }, true);
+
+        // Anlık GPS Takibi ve Rota Güncelleme
         if (navigator.geolocation) {
             navigator.geolocation.watchPosition(
                 function(position) {
                     currentLat = position.coords.latitude;
                     currentLng = position.coords.longitude;
-                    const heading = position.coords.heading;
-
+                    
                     carMarker.setLatLng([currentLat, currentLng]);
                     
                     if (!userInteracting && !routeLine) {
                         map.panTo([currentLat, currentLng], { animate: true });
-                    }
-
-                    if (heading !== null && !isNaN(heading)) {
-                        // Araç ikonunu döndür
-                        const carDiv = document.getElementById('car');
-                        if (carDiv) { carDiv.style.transform = `rotate(${heading}deg)`; }
-
-                        // Pusula ibresini kuzeyi gösterecek şekilde ters yönde döndür
-                        const compassDiv = document.getElementById('compass');
-                        if (compassDiv) { compassDiv.style.transform = `rotate(${-heading}deg)`; }
                     }
 
                     const now = Date.now();
@@ -224,7 +229,7 @@
             }, 60000);
         });
 
-        // Akıllı Arama
+        // Gelişmiş Türkiye Odaklı Adres Arama
         const searchBox = document.getElementById('search-box');
         const suggestionsBox = document.getElementById('suggestions');
 
@@ -239,7 +244,8 @@
 
             searchTimeout = setTimeout(async () => {
                 try {
-                    const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=5&q=${encodeURIComponent(query)}`);
+                    // Türkiye içi arama önceliği (countrycodes=tr) ve zengin veri seti
+                    const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=8&countrycodes=tr&q=${encodeURIComponent(query)}`);
                     const data = await res.json();
 
                     suggestionsBox.innerHTML = '';
@@ -269,7 +275,7 @@
                 } catch (err) {
                     console.error("Arama hatası", err);
                 }
-            }, 600);
+            }, 400);
         });
 
         async function updateRoute(fitBounds = false) {
